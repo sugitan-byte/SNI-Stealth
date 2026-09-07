@@ -1,0 +1,34 @@
+# STEALTH-Tunnel server configuration.
+# Copy to server.properties and edit. Command-line flags override these values.
+
+# TCP port to listen on.
+listenPort=8443
+
+# Speak TLS on the socket. Set to false only when TLS is terminated upstream
+# (behind nginx/HAProxy/a CDN) or for local testing.
+useTls=true
+
+# Server certificate keystore (JKS or PKCS12). Required when useTls=true.
+#   keytool -genkeypair -alias stealth -keyalg RSA -keysize 2048 -validity 3650 \
+#           -storetype PKCS12 -keystore server.p12 -storepass changeit \
+#           -dname "CN=front.example.com"
+keystorePath=server.p12
+keystorePass=changeit
+
+# Shared secret. A client must send it in the X-Stealth-Auth header to be bridged;
+# anything else is treated as a probe and sent to the fallback. Use a long random value.
+token=CHANGE-ME-TO-A-LONG-RANDOM-STRING
+
+# Bridge selection is by what the client sends (Upgrade: websocket -> WebSocket, else SOCKS5).
+# This value is advisory/reserved: auto | socks5 | websocket
+bridge=auto
+
+# What unverified peers (probes) get: http200 | forward
+fallback=forward
+
+# Decoy origin for fallback=forward. Pick a real, boring site; probers see its genuine response.
+forwardHost=www.bing.com
+forwardPort=80
+
+# Accept-loop worker pool size.
+workerThreads=512
