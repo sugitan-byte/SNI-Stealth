@@ -23,7 +23,62 @@ log()  { printf '\033[1;36m[sni-stealth]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[sni-stealth]\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31m[sni-stealth]\033[0m %s\n' "$*" >&2; exit 1; }
 
+# ---------------------------------------------------------------- management menu
+setprop() { # setprop KEY VALUE  (in server.properties; adds the key if missing)
+  local cfg="$INSTALL_DIR/server.properties" k="$1" v="$2"
+  if grep -qE "^${k}=" "$cfg"; then sed -i -E "s#^${k}=.*#${k}=${v}#" "$cfg"; else echo "${k}=${v}" >> "$cfg"; fi
+}
+getprop() { grep -E "^$1=" "$INSTALL_DIR/server.properties" 2>/dev/null | head -1 | cut -d= -f2-; }
+regen_cert() { # regen_cert CN  — the hostname the server certificate presents
+  local cn="$1"
+  keytool -delete -alias stealth -keystore "$INSTALL_DIR/server.p12" -storepass changeit >/dev/null 2>&1 || true
+  keytool -genkeypair -alias stealth -keyalg RSA -keysize 2048 -validity 3650 \
+          -storetype PKCS12 -keystore "$INSTALL_DIR/server.p12" -storepass changeit \
+          -dname "CN=${cn}" >/dev/null 2>&1 && log "Certificate regenerated (CN=${cn})."
+}
+manage() {
+  local cfg="$INSTALL_DIR/server.properties"
+  [ -f "$cfg" ] || die "No server.properties at $INSTALL_DIR — run the installer first."
+  while true; do
+    local tok; tok="$(getprop token)"
+    local cn; cn="$(keytool -list -v -keystore "$INSTALL_DIR/server.p12" -storepass changeit 2>/dev/null | grep -m1 'Owner:' | sed -E 's/.*CN=([^,]*).*/\1/')"
+    printf '\n\033[1;36m==== SNI-Stealth server menu ====\033[0m\n'
+    printf '  listen port   : %s\n' "$(getprop listenPort)"
+    printf '  auth token    : %s\n' "${tok:0:6}...${tok: -4}"
+    printf '  decoy host    : %s:%s (tls=%s)\n' "$(getprop forwardHost)" "$(getprop forwardPort)" "$(getprop forwardTls)"
+    printf '  fallback      : %s\n' "$(getprop fallback)"
+    printf '  cert CN (SNI) : %s\n' "$cn"
+    printf '  service       : %s\n' "$(systemctl is-active $SERVICE 2>/dev/null)"
+    cat <<MENU
+  ------------------------------------------
+  1) Change decoy host        6) Change fallback (http200|forward)
+  2) Change decoy port        7) Regenerate cert CN (server SNI)
+  3) Change listen port       8) Restart service
+  4) Change forward-tls       9) Status + recent logs
+  5) Change auth token        0) Exit
+MENU
+    read -r -p "Choice: " ch
+    case "$ch" in
+      1) read -r -p "New decoy host: " v; setprop forwardHost "$v";;
+      2) read -r -p "New decoy port: " v; setprop forwardPort "$v";;
+      3) read -r -p "New listen port: " v; setprop listenPort "$v"; [ "$v" -lt 1024 ] && command -v setcap >/dev/null && setcap 'cap_net_bind_service=+ep' "$(readlink -f "$(command -v java)")" 2>/dev/null; command -v ufw >/dev/null && ufw allow "$v/tcp" >/dev/null 2>&1;;
+      4) read -r -p "forward-tls (auto|true|false): " v; setprop forwardTls "$v";;
+      5) read -r -p "New auth token (must match the client StealthToken): " v; setprop token "$v";;
+      6) read -r -p "Fallback (http200|forward): " v; setprop fallback "$v";;
+      7) read -r -p "New cert CN / SNI (eg m.google.com): " v; regen_cert "$v";;
+      8) systemctl restart $SERVICE && log "restarted: $(systemctl is-active $SERVICE)";;
+      9) systemctl status $SERVICE --no-pager | sed -n '1,6p'; journalctl -u $SERVICE --no-pager | tail -12;;
+      0) exit 0;;
+      *) warn "unknown choice";;
+    esac
+    case "$ch" in 1|2|3|4|5|6|7) read -r -p "Apply now (restart service)? [Y/n]: " a; [ "${a:-Y}" != "n" ] && systemctl restart $SERVICE && log "restarted: $(systemctl is-active $SERVICE)";; esac
+  done
+}
+
+
 [ "$(id -u)" -eq 0 ] || die "Run as root (use sudo)."
+
+if [ "${1:-}" = "menu" ] || [ "${1:-}" = "--menu" ]; then manage; exit 0; fi
 
 # ---------------------------------------------------------------- package manager
 if   command -v apt-get >/dev/null 2>&1; then PM=apt

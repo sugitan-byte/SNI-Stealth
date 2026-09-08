@@ -55,13 +55,12 @@ final class ConnectionHandler implements Runnable {
             }
 
             boolean ok = auth.verify(head);
-            String tok = head.header("x-stealth-auth");
-            String peer = client.getInetAddress() == null ? "?" : client.getInetAddress().getHostAddress();
-            System.out.println("[stealth] conn " + peer + " auth=" + (ok ? "OK" : "FAIL")
-                    + " mux=" + head.isMux() + " ws=" + head.isWebSocketUpgrade()
-                    + " tokenLen=" + (tok == null ? -1 : tok.length())
-                    + " tokenTail=" + (tok == null ? "-" : tok.substring(Math.max(0, tok.length() - 6)))
-                    + " req=\"" + head.requestLine + "\"");
+            if (!ok) {
+                // Only probes are worth a line; a genuine client is silent. Keeps the journal quiet.
+                String peer = client.getInetAddress() == null ? "?" : client.getInetAddress().getHostAddress();
+                System.out.println("[stealth] probe from " + peer + " -> fallback (req=\""
+                        + head.requestLine + "\")");
+            }
             if (ok) {
                 // Mux is an explicit protocol signal and must win over any Upgrade header — a mux
                 // client's injected payload often carries a decoy "Upgrade: websocket" line as DPI
