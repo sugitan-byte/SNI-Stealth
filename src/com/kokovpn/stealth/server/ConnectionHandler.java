@@ -54,7 +54,15 @@ final class ConnectionHandler implements Runnable {
                 return;
             }
 
-            if (auth.verify(head)) {
+            boolean ok = auth.verify(head);
+            String tok = head.header("x-stealth-auth");
+            String peer = client.getInetAddress() == null ? "?" : client.getInetAddress().getHostAddress();
+            System.out.println("[stealth] conn " + peer + " auth=" + (ok ? "OK" : "FAIL")
+                    + " mux=" + head.isMux() + " ws=" + head.isWebSocketUpgrade()
+                    + " tokenLen=" + (tok == null ? -1 : tok.length())
+                    + " tokenTail=" + (tok == null ? "-" : tok.substring(Math.max(0, tok.length() - 6)))
+                    + " req=\"" + head.requestLine + "\"");
+            if (ok) {
                 InboundBridge bridge;
                 if (head.isWebSocketUpgrade()) {
                     bridge = websocket;

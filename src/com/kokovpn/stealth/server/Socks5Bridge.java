@@ -74,7 +74,9 @@ final class Socks5Bridge implements InboundBridge {
         try {
             remote.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
             remote.setTcpNoDelay(true);
+            System.out.println("[stealth] CONNECT " + host + ":" + port + " OK");
         } catch (IOException e) {
+            System.out.println("[stealth] CONNECT " + host + ":" + port + " FAILED " + e.getMessage());
             reply(cout, 0x05);        // connection refused / unreachable
             onClose.run();
             closeQuietly(remote);
