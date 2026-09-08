@@ -60,7 +60,7 @@ All settings can also be passed as flags (flags override the file):
 ```bash
 java -cp out com.kokovpn.stealth.server.StealthServer \
      --port 443 --keystore server.p12 --keystore-pass changeit \
-     --token 's3cr3t' --fallback forward --forward-host www.bing.com --forward-port 80
+     --token 's3cr3t' --fallback forward --forward-host mpu-ecommerce.com --forward-port 443
 ```
 
 Terminating TLS upstream (nginx/CDN) instead? Add `--no-tls` and let the front end handle TLS.
@@ -76,6 +76,22 @@ accept ─▶ read handshake head ─▶ X-Stealth-Auth == token ?
 
 The client forwards its device's tun2socks SOCKS5 stream through the tunnel, and the server runs
 the SOCKS5 negotiation and makes the outbound connection.
+
+### `fallback=forward` and TLS re-origination
+
+The forward fallback is a transparent reverse proxy: it opens a socket to `forwardHost:forwardPort`,
+**replays the exact request bytes the probe already sent**, and pipes both directions so the prober
+receives the decoy site's genuine response.
+
+Because this server **terminates TLS**, the bytes reaching the fallback are already decrypted
+plaintext. Forwarding that plaintext to a decoy on `:443` would fail — the origin expects a real
+TLS ClientHello. So `forwardTls` controls it:
+
+- `auto` (default) — re-originate TLS when `forwardPort` is 443, forward raw bytes otherwise
+- `true` — always open a fresh TLS session to the decoy (with SNI = `forwardHost`)
+- `false` — forward raw bytes; use **only** for a plaintext `:80` origin
+
+The origin's certificate is not validated — the fallback is camouflage, not a trust boundary.
 
 ## Test (no keystore needed)
 

@@ -27,8 +27,16 @@ bridge=auto
 fallback=forward
 
 # Decoy origin for fallback=forward. Pick a real, boring site; probers see its genuine response.
-forwardHost=www.bing.com
-forwardPort=80
+forwardHost=mpu-ecommerce.com
+forwardPort=443
+
+# Speak TLS to the decoy origin. This server terminates TLS, so the bytes handed to the fallback
+# are already decrypted; a decoy on :443 expects a real TLS session, not plaintext. Leave "auto"
+# (TLS on when forwardPort is 443) unless you know the origin is plaintext:
+#   auto  -> TLS when forwardPort == 443, plaintext otherwise
+#   true  -> always re-originate TLS to the decoy
+#   false -> forward raw bytes (use only for a plaintext :80 origin)
+forwardTls=auto
 
 # Accept-loop worker pool size.
 workerThreads=512

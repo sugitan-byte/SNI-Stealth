@@ -21,8 +21,18 @@ public final class ServerConfig {
     public String fallback = "http200";         // "http200" | "forward"
     public String forwardHost = "example.com";  // decoy origin for fallback=forward
     public int forwardPort = 80;
+    // Speak TLS to the decoy origin. "auto" (default) turns it on when forwardPort is 443, since
+    // this server terminates TLS and forwarding decrypted bytes to a TLS origin would fail.
+    public String forwardTls = "auto";          // "auto" | "true" | "false"
 
     public int workerThreads = 512;
+
+    /** Resolve whether to open a TLS session to the decoy origin. */
+    public boolean forwardTlsEnabled() {
+        if ("true".equalsIgnoreCase(forwardTls)) return true;
+        if ("false".equalsIgnoreCase(forwardTls)) return false;
+        return forwardPort == 443;              // "auto"
+    }
 
     public static ServerConfig fromArgs(String[] args) throws IOException {
         ServerConfig cfg = new ServerConfig();
@@ -46,6 +56,8 @@ public final class ServerConfig {
                 case "--fallback":     cfg.fallback = next(args, ++i); break;
                 case "--forward-host": cfg.forwardHost = next(args, ++i); break;
                 case "--forward-port": cfg.forwardPort = Integer.parseInt(next(args, ++i)); break;
+                case "--forward-tls":  cfg.forwardTls = "true"; break;
+                case "--no-forward-tls": cfg.forwardTls = "false"; break;
                 default: break;
             }
         }
@@ -69,6 +81,7 @@ public final class ServerConfig {
         fallback     = p.getProperty("fallback", fallback);
         forwardHost  = p.getProperty("forwardHost", forwardHost);
         forwardPort  = intProp(p, "forwardPort", forwardPort);
+        forwardTls   = p.getProperty("forwardTls", forwardTls);
         workerThreads = intProp(p, "workerThreads", workerThreads);
     }
 

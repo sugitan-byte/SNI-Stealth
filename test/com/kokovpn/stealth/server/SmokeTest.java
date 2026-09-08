@@ -15,7 +15,9 @@ import java.net.Socket;
  * <ol>
  *   <li>correct token + plain injection -&gt; SOCKS5 bridge relays an echo;</li>
  *   <li>correct token + WebSocket upgrade -&gt; WebSocket bridge relays an echo through frames;</li>
- *   <li>no token (a probe) -&gt; the HTTP-200 fallback, never a bridge.</li>
+ *   <li>no token (a probe) -&gt; the HTTP-200 fallback, never a bridge;</li>
+ *   <li>no token, fallback=forward -&gt; transparently proxied to a decoy origin, which sees the
+ *       original request bytes and whose response is piped back.</li>
  * </ol>
  *
  * Exits non-zero on any failure.
@@ -36,12 +38,27 @@ public final class SmokeTest {
         StealthServer server = new StealthServer(cfg);
         int port = server.startBackground();
 
+        // A second server whose fallback transparently forwards to a plaintext decoy origin.
+        int decoyPort = startDecoyOrigin();
+        ServerConfig fwdCfg = new ServerConfig();
+        fwdCfg.listenPort = 0;
+        fwdCfg.useTls = false;
+        fwdCfg.token = TOKEN;
+        fwdCfg.fallback = "forward";
+        fwdCfg.forwardHost = "127.0.0.1";
+        fwdCfg.forwardPort = decoyPort;
+        fwdCfg.forwardTls = "false";   // decoy speaks plaintext here
+        StealthServer fwdServer = new StealthServer(fwdCfg);
+        int fwdPort = fwdServer.startBackground();
+
         try {
             testSocksBridge(port, echoPort);
             testWebSocketBridge(port, echoPort);
             testProbeFallback(port);
+            testTransparentForward(fwdPort);
         } finally {
             server.stop();
+            fwdServer.stop();
         }
 
         if (failures == 0) {
@@ -117,6 +134,22 @@ public final class SmokeTest {
         s.close();
     }
 
+    // ---- case 4: no token, fallback=forward -> transparent proxy to a decoy origin ----
+    private static void testTransparentForward(int serverPort) throws IOException {
+        Socket s = new Socket("127.0.0.1", serverPort);
+        s.setSoTimeout(5000);
+        InputStream in = s.getInputStream();
+        OutputStream out = s.getOutputStream();
+        // A probe with no token; the request line carries a marker the decoy echoes back, proving
+        // the head we already consumed was replayed to the origin verbatim.
+        out.write("GET /probe-marker HTTP/1.1\r\nHost: decoy.example\r\n\r\n".getBytes("ISO-8859-1"));
+        out.flush();
+        String status = readHttpHead(in);
+        check("forward fallback returns decoy response",
+                status != null && status.contains("200 DECOY") && status.contains("/probe-marker"));
+        s.close();
+    }
+
     // ---- helpers ----
     private static void socks5Connect(InputStream in, OutputStream out, int port) throws IOException {
         out.write(new byte[]{0x05, 0x01, 0x00});
@@ -156,6 +189,46 @@ public final class SmokeTest {
             byte[] m = WebSocketFrame.readMessage(in, out, true);
             return m == null ? new byte[0] : m;
         }
+    }
+
+    /** A plaintext decoy web server: reads the request line and echoes its path in the status. */
+    private static int startDecoyOrigin() throws IOException {
+        final ServerSocket ss = new ServerSocket();
+        ss.bind(new InetSocketAddress("127.0.0.1", 0));
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                while (true) {
+                    try {
+                        final Socket c = ss.accept();
+                        new Thread(new Runnable() {
+                            public void run() {
+                                try {
+                                    String firstLine = readHttpHead(c.getInputStream());
+                                    String path = "";
+                                    if (firstLine != null) {
+                                        String[] parts = firstLine.split(" ");
+                                        if (parts.length >= 2) {
+                                            path = parts[1];
+                                        }
+                                    }
+                                    String resp = "HTTP/1.1 200 DECOY " + path + "\r\n"
+                                            + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+                                    OutputStream o = c.getOutputStream();
+                                    o.write(resp.getBytes("ISO-8859-1"));
+                                    o.flush();
+                                } catch (IOException ignored) {
+                                }
+                            }
+                        }).start();
+                    } catch (IOException e) {
+                        break;
+                    }
+                }
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+        return ss.getLocalPort();
     }
 
     private static int startEchoServer() throws IOException {

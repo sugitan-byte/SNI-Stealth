@@ -40,7 +40,7 @@ public final class StealthServer {
         this.socks5 = new Socks5Bridge();
         this.websocket = new WebSocketBridge();
         this.fallback = "forward".equalsIgnoreCase(cfg.fallback)
-                ? new TransparentForwardFallback(cfg.forwardHost, cfg.forwardPort)
+                ? new TransparentForwardFallback(cfg.forwardHost, cfg.forwardPort, cfg.forwardTlsEnabled())
                 : new HttpOkFallback();
         this.pool = Executors.newFixedThreadPool(Math.max(4, cfg.workerThreads));
     }

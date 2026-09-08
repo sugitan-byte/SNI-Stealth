@@ -10,8 +10,8 @@
 # installs a systemd service, opens the firewall, and prints the client settings.
 #
 # Non-interactive overrides (env vars):
-#   PORT=443 TOKEN=... SNI=m.google.com FALLBACK=forward FORWARD_HOST=www.bing.com \
-#   FORWARD_PORT=80 BRIDGE=socks5 REPO_URL=... INSTALL_DIR=/opt/sni-stealth
+#   PORT=443 TOKEN=... SNI=m.google.com FALLBACK=forward FORWARD_HOST=mpu-ecommerce.com \
+#   FORWARD_PORT=443 FORWARD_TLS=auto BRIDGE=socks5 REPO_URL=... INSTALL_DIR=/opt/sni-stealth
 #
 set -euo pipefail
 
@@ -98,8 +98,9 @@ PUBIP="$(curl -fsS4 https://api.ipify.org 2>/dev/null || echo YOUR_VPS_IP)"
 prompt PORT         "Listen port"                 "443"
 prompt SNI          "Front / SNI domain"          "m.google.com"
 prompt FALLBACK     "Fallback (http200|forward)"  "forward"
-prompt FORWARD_HOST "Decoy origin host"           "www.bing.com"
-prompt FORWARD_PORT "Decoy origin port"           "80"
+prompt FORWARD_HOST "Decoy origin host"           "mpu-ecommerce.com"
+prompt FORWARD_PORT "Decoy origin port"           "443"
+prompt FORWARD_TLS  "Forward TLS to decoy (auto|true|false)" "auto"
 prompt BRIDGE       "Bridge (socks5|websocket)"   "socks5"
 if [ -z "${TOKEN:-}" ]; then
   TOKEN="$(head -c32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
@@ -126,6 +127,7 @@ bridge=${BRIDGE}
 fallback=${FALLBACK}
 forwardHost=${FORWARD_HOST}
 forwardPort=${FORWARD_PORT}
+forwardTls=${FORWARD_TLS}
 workerThreads=512
 CFG
 chmod 600 "$INSTALL_DIR/server.properties"
@@ -181,7 +183,7 @@ cat <<SUMMARY
   Port             : ${PORT}
   Token            : ${TOKEN}
   Bridge           : ${BRIDGE}
-  Fallback         : ${FALLBACK}  (${FORWARD_HOST}:${FORWARD_PORT})
+  Fallback         : ${FALLBACK}  (${FORWARD_HOST}:${FORWARD_PORT}, tls=${FORWARD_TLS})
 
   --- Enter these in the KoKo VPN admin (Stealth network + server) ---
   Server ServerIP      : ${PUBIP}
