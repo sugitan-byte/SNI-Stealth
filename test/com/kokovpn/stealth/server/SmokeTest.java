@@ -6,6 +6,9 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Self-contained smoke test for the STEALTH server, using no TLS and loopback sockets so it needs
@@ -56,6 +59,7 @@ public final class SmokeTest {
             testWebSocketBridge(port, echoPort);
             testProbeFallback(port);
             testTransparentForward(fwdPort);
+            testMux(port, echoPort);
         } finally {
             server.stop();
             fwdServer.stop();
@@ -148,6 +152,64 @@ public final class SmokeTest {
         check("forward fallback returns decoy response",
                 status != null && status.contains("200 DECOY") && status.contains("/probe-marker"));
         s.close();
+    }
+
+    // ---- case 5: mux -> two independent SOCKS5 streams over ONE connection ----
+    private static void testMux(int serverPort, int echoPort) throws IOException {
+        Socket s = new Socket("127.0.0.1", serverPort);
+        s.setSoTimeout(5000);
+        InputStream in = s.getInputStream();
+        OutputStream out = s.getOutputStream();
+        // One handshake, with the mux header, then all streams flow as frames over this connection.
+        String head = "GET / HTTP/1.1\r\nHost: front.example\r\n"
+                + "X-Stealth-Auth: " + TOKEN + "\r\nX-Stealth-Mux: 1\r\n\r\n";
+        out.write(head.getBytes("ISO-8859-1"));
+        out.flush();
+
+        muxStreamEcho(in, out, 1, echoPort, "mux-stream-one");
+        muxStreamEcho(in, out, 2, echoPort, "mux-stream-two");
+        s.close();
+    }
+
+    /** Open one mux stream, run a SOCKS5 CONNECT to the echo server through it, verify the echo. */
+    private static void muxStreamEcho(InputStream in, OutputStream out, int id, int echoPort, String msg)
+            throws IOException {
+        MuxFrame.writeOpen(out, id);
+        MuxFrame.writeData(out, id, new byte[]{0x05, 0x01, 0x00}, 0, 3);   // SOCKS greeting
+        byte[] sel = muxReadN(in, id, 2);
+        check("mux #" + id + " method-select", sel[0] == 0x05 && sel[1] == 0x00);
+
+        byte[] req = socksConnectRequest(echoPort);
+        MuxFrame.writeData(out, id, req, 0, req.length);                   // CONNECT
+        byte[] reply = muxReadN(in, id, 10);
+        check("mux #" + id + " connect reply", reply[1] == 0x00);
+
+        byte[] payload = msg.getBytes("US-ASCII");
+        MuxFrame.writeData(out, id, payload, 0, payload.length);           // echo through the tunnel
+        byte[] back = muxReadN(in, id, payload.length);
+        check("mux #" + id + " echo", new String(back, "US-ASCII").equals(msg));
+    }
+
+    private static final Map<Integer, byte[]> MUX_LEFTOVER = new HashMap<Integer, byte[]>();
+
+    /** Read exactly {@code n} bytes of stream {@code id}'s payload, buffering across DATA frames. */
+    private static byte[] muxReadN(InputStream in, int id, int n) throws IOException {
+        byte[] acc = MUX_LEFTOVER.containsKey(id) ? MUX_LEFTOVER.get(id) : new byte[0];
+        while (acc.length < n) {
+            MuxFrame.Frame f = MuxFrame.read(in);
+            if (f == null) {
+                throw new IOException("mux stream ended early");
+            }
+            if (f.type == MuxFrame.DATA && f.streamId == id) {
+                byte[] merged = new byte[acc.length + f.payload.length];
+                System.arraycopy(acc, 0, merged, 0, acc.length);
+                System.arraycopy(f.payload, 0, merged, acc.length, f.payload.length);
+                acc = merged;
+            }
+            // frames for other streams / CLOSE are ignored: the test drives one stream at a time.
+        }
+        MUX_LEFTOVER.put(id, Arrays.copyOfRange(acc, n, acc.length));
+        return Arrays.copyOfRange(acc, 0, n);
     }
 
     // ---- helpers ----

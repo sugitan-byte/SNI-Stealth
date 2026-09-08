@@ -25,14 +25,16 @@ final class ConnectionHandler implements Runnable {
     private final AuthPolicy auth;
     private final InboundBridge socks5;
     private final InboundBridge websocket;
+    private final InboundBridge mux;
     private final FallbackHandler fallback;
 
     ConnectionHandler(Socket client, AuthPolicy auth, InboundBridge socks5,
-                      InboundBridge websocket, FallbackHandler fallback) {
+                      InboundBridge websocket, InboundBridge mux, FallbackHandler fallback) {
         this.client = client;
         this.auth = auth;
         this.socks5 = socks5;
         this.websocket = websocket;
+        this.mux = mux;
         this.fallback = fallback;
     }
 
@@ -53,7 +55,14 @@ final class ConnectionHandler implements Runnable {
             }
 
             if (auth.verify(head)) {
-                InboundBridge bridge = head.isWebSocketUpgrade() ? websocket : socks5;
+                InboundBridge bridge;
+                if (head.isWebSocketUpgrade()) {
+                    bridge = websocket;
+                } else if (head.isMux()) {
+                    bridge = mux;               // one connection, many multiplexed SOCKS5 streams
+                } else {
+                    bridge = socks5;
+                }
                 bridge.handle(client, in, out, head);
             } else {
                 fallback.handle(client, in, out, head);

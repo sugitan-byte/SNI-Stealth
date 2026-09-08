@@ -38,6 +38,11 @@ final class HandshakeReader {
             String up = header("upgrade");
             return up != null && up.toLowerCase().contains("websocket");
         }
+
+        /** True when the client asked to multiplex many streams over this one connection. */
+        boolean isMux() {
+            return header("x-stealth-mux") != null;
+        }
     }
 
     private static final int MAX_HEAD = 32 * 1024;

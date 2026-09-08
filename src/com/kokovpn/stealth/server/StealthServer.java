@@ -28,6 +28,7 @@ public final class StealthServer {
     private final AuthPolicy auth;
     private final InboundBridge socks5;
     private final InboundBridge websocket;
+    private final InboundBridge mux;
     private final FallbackHandler fallback;
     private final ExecutorService pool;
 
@@ -39,6 +40,7 @@ public final class StealthServer {
         this.auth = new TokenAuthPolicy(cfg.token);
         this.socks5 = new Socks5Bridge();
         this.websocket = new WebSocketBridge();
+        this.mux = new MuxBridge();
         this.fallback = "forward".equalsIgnoreCase(cfg.fallback)
                 ? new TransparentForwardFallback(cfg.forwardHost, cfg.forwardPort, cfg.forwardTlsEnabled())
                 : new HttpOkFallback();
@@ -77,7 +79,7 @@ public final class StealthServer {
                 }
                 break;
             }
-            pool.submit(new ConnectionHandler(client, auth, socks5, websocket, fallback));
+            pool.submit(new ConnectionHandler(client, auth, socks5, websocket, mux, fallback));
         }
     }
 
