@@ -63,11 +63,16 @@ final class ConnectionHandler implements Runnable {
                     + " tokenTail=" + (tok == null ? "-" : tok.substring(Math.max(0, tok.length() - 6)))
                     + " req=\"" + head.requestLine + "\"");
             if (ok) {
+                // Mux is an explicit protocol signal and must win over any Upgrade header — a mux
+                // client's injected payload often carries a decoy "Upgrade: websocket" line as DPI
+                // camouflage, and routing that to the WebSocket bridge (which then demands a
+                // Sec-WebSocket-Key it will never get) closes the connection and makes the client
+                // reconnect forever. So: mux first, real WebSocket second, plain SOCKS5 last.
                 InboundBridge bridge;
-                if (head.isWebSocketUpgrade()) {
-                    bridge = websocket;
-                } else if (head.isMux()) {
+                if (head.isMux()) {
                     bridge = mux;               // one connection, many multiplexed SOCKS5 streams
+                } else if (head.isWebSocketUpgrade()) {
+                    bridge = websocket;
                 } else {
                     bridge = socks5;
                 }
