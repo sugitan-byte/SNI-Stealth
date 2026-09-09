@@ -63,7 +63,9 @@ final class HandshakeReader {
                 if (crlfState == 1) {
                     crlfState = 2;
                 } else if (crlfState == 3) {
-                    return parse(raw.toByteArray());
+                    return parse(raw.toByteArray()); // \r\n\r\n — standard terminator
+                } else if (crlfState == 2) {
+                    return parse(raw.toByteArray()); // \n\n — bare-LF terminator (non-standard but tolerated)
                 } else {
                     crlfState = 0;
                 }
