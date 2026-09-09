@@ -19,7 +19,18 @@ import java.net.Socket;
  */
 final class ConnectionHandler implements Runnable {
 
-    private static final int READ_TIMEOUT_MS = 60000;
+    /**
+     * Maximum time allowed for the TLS handshake + HTTP head to arrive. Kept short so a
+     * carrier-delayed or probe connection does not hold a worker thread for a full minute —
+     * which would starve the pool when many non-mux connections arrive simultaneously.
+     */
+    private static final int HANDSHAKE_TIMEOUT_MS = 10000;
+
+    /**
+     * Timeout for the relay phase after the handshake completes. Long enough for the SOCKS5
+     * negotiation, outbound connect, and idle periods in a real session.
+     */
+    private static final int DATA_TIMEOUT_MS = 60000;
 
     private final Socket client;
     private final AuthPolicy auth;
@@ -41,7 +52,10 @@ final class ConnectionHandler implements Runnable {
     @Override
     public void run() {
         try {
-            client.setSoTimeout(READ_TIMEOUT_MS);
+            // Short timeout for the TLS+HTTP handshake phase. On SSLSocket the handshake fires
+            // on the first read(); this timeout bounds how long a carrier-delayed ClientHello
+            // holds a worker thread. After the head is parsed we switch to a longer data timeout.
+            client.setSoTimeout(HANDSHAKE_TIMEOUT_MS);
             client.setTcpNoDelay(true);
             InputStream in = client.getInputStream();
             OutputStream out = client.getOutputStream();
@@ -53,6 +67,9 @@ final class ConnectionHandler implements Runnable {
                 close();
                 return;
             }
+
+            // Handshake done — switch to data timeout for the relay phase.
+            client.setSoTimeout(DATA_TIMEOUT_MS);
 
             boolean ok = auth.verify(head);
             if (!ok) {
@@ -84,6 +101,7 @@ final class ConnectionHandler implements Runnable {
             close();
         }
     }
+
 
     private void close() {
         try {

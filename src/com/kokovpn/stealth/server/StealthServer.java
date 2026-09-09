@@ -47,6 +47,13 @@ public final class StealthServer {
         this.pool = Executors.newFixedThreadPool(Math.max(4, cfg.workerThreads));
     }
 
+    /**
+     * Large enough to absorb a burst of non-mux connections (one per flow) without
+     * the OS RST-ing SYNs because the kernel's SYN queue is full. The default (50)
+     * is far too small when the client opens one TLS connection per SOCKS5 flow.
+     */
+    private static final int ACCEPT_BACKLOG = 1024;
+
     /** Bind the listener and return the actual port (useful when {@code listenPort} is 0). */
     public int bind() throws Exception {
         ServerSocket ss;
@@ -59,7 +66,7 @@ public final class StealthServer {
             ss = new ServerSocket();
         }
         ss.setReuseAddress(true);
-        ss.bind(new InetSocketAddress("0.0.0.0", cfg.listenPort));
+        ss.bind(new InetSocketAddress("0.0.0.0", cfg.listenPort), ACCEPT_BACKLOG);
         this.serverSocket = ss;
         this.running = true;
         return ss.getLocalPort();
