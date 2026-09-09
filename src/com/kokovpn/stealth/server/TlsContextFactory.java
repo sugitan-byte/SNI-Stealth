@@ -21,6 +21,7 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.X509ExtendedKeyManager;
 import javax.net.ssl.X509KeyManager;
 
@@ -166,7 +167,7 @@ final class TlsContextFactory {
     // Factory
     // -----------------------------------------------------------------------------------------
 
-    static ServerSocketFactory serverSocketFactory(ServerConfig cfg) throws Exception {
+    static SSLContext sslContext(ServerConfig cfg) throws Exception {
         char[] pass = cfg.keystorePass == null ? new char[0] : cfg.keystorePass.toCharArray();
         KeyStore ks = KeyStore.getInstance(guessType(cfg.keystorePath));
         InputStream in = new FileInputStream(cfg.keystorePath);
@@ -189,7 +190,15 @@ final class TlsContextFactory {
 
         SSLContext ctx = SSLContext.getInstance("TLS");
         ctx.init(wrapped, null, null);
-        return ctx.getServerSocketFactory();
+        return ctx;
+    }
+
+    static SSLSocketFactory sslSocketFactory(ServerConfig cfg) throws Exception {
+        return sslContext(cfg).getSocketFactory();
+    }
+
+    static ServerSocketFactory serverSocketFactory(ServerConfig cfg) throws Exception {
+        return sslContext(cfg).getServerSocketFactory();
     }
 
     /**

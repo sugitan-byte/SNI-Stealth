@@ -31,11 +31,12 @@ public final class StealthServer {
     private final InboundBridge mux;
     private final FallbackHandler fallback;
     private final ExecutorService pool;
+    private final javax.net.ssl.SSLSocketFactory sslSocketFactory;
 
     private volatile boolean running = false;
     private ServerSocket serverSocket;
 
-    public StealthServer(ServerConfig cfg) {
+    public StealthServer(ServerConfig cfg) throws Exception {
         this.cfg = cfg;
         this.auth = new TokenAuthPolicy(cfg.token);
         this.socks5 = new Socks5Bridge();
@@ -45,6 +46,7 @@ public final class StealthServer {
                 ? new TransparentForwardFallback(cfg.forwardHost, cfg.forwardPort, cfg.forwardTlsEnabled())
                 : new HttpOkFallback();
         this.pool = Executors.newFixedThreadPool(Math.max(4, cfg.workerThreads));
+        this.sslSocketFactory = cfg.useTls ? TlsContextFactory.sslSocketFactory(cfg) : null;
     }
 
     /**
@@ -56,15 +58,7 @@ public final class StealthServer {
 
     /** Bind the listener and return the actual port (useful when {@code listenPort} is 0). */
     public int bind() throws Exception {
-        ServerSocket ss;
-        if (cfg.useTls) {
-            ServerSocketFactory f = TlsContextFactory.serverSocketFactory(cfg);
-            SSLServerSocket sslss = (SSLServerSocket) f.createServerSocket();
-            TlsContextFactory.tuneServerSocket(sslss);
-            ss = sslss;
-        } else {
-            ss = new ServerSocket();
-        }
+        ServerSocket ss = new ServerSocket();
         ss.setReuseAddress(true);
         ss.bind(new InetSocketAddress("0.0.0.0", cfg.listenPort), ACCEPT_BACKLOG);
         this.serverSocket = ss;
@@ -75,7 +69,7 @@ public final class StealthServer {
     /** Run the accept loop on the calling thread until {@link #stop()}. */
     public void serve() {
         log("STEALTH server listening on " + serverSocket.getLocalPort()
-                + " (tls=" + cfg.useTls + ", fallback=" + cfg.fallback + ")");
+                + " (dual-mode: TLS=" + cfg.useTls + " + Plain/Fallback, fallback=" + cfg.fallback + ")");
         while (running) {
             final Socket client;
             try {
@@ -86,7 +80,7 @@ public final class StealthServer {
                 }
                 break;
             }
-            pool.submit(new ConnectionHandler(client, auth, socks5, websocket, mux, fallback));
+            pool.submit(new ConnectionHandler(client, sslSocketFactory, auth, socks5, websocket, mux, fallback));
         }
     }
 
