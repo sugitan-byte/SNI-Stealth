@@ -101,7 +101,11 @@ final class ConnectionHandler implements Runnable {
                 fallback.handle(client, in, out, head);
             }
         } catch (Exception e) {
-            // Probes, TLS errors and resets all land here; nothing actionable, just close.
+            String peer = client.getInetAddress() == null ? "?" : client.getInetAddress().getHostAddress();
+            System.err.println("[stealth] TLS/conn error from " + peer + ": " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            if (e.getCause() != null) {
+                System.err.println("   caused by: " + e.getCause().getClass().getSimpleName() + ": " + e.getCause().getMessage());
+            }
             close();
         }
     }
