@@ -52,6 +52,10 @@ final class ConnectionHandler implements Runnable {
     @Override
     public void run() {
         try {
+            // Ensure the permissive SNIMatcher and protocols are applied directly to the
+            // accepted SSLSocket instance before the TLS handshake triggers on read().
+            TlsContextFactory.tuneAcceptedSocket(client);
+
             // Short timeout for the TLS+HTTP handshake phase. On SSLSocket the handshake fires
             // on the first read(); this timeout bounds how long a carrier-delayed ClientHello
             // holds a worker thread. After the head is parsed we switch to a longer data timeout.
